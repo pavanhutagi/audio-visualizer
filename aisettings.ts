@@ -1,21 +1,25 @@
-// Audio Analysis Settings
+/**
+ * Audio Analysis Settings
+ */
 export const audioSettings = {
   // Microphone and audio processing settings
   fftSize: 256,
-  smoothingTimeConstant: 0.8,
-  minDecibels: -70,
+  smoothingTimeConstant: 0.4, // Reduced from 0.7 for faster response
+  minDecibels: -80,
   maxDecibels: -30,
 
   // Feature extraction settings
   featureExtraction: {
-    bufferSize: 512,
-    hopSize: 256,
+    bufferSize: 256, // Reduced from 512 for lower latency
+    hopSize: 128, // Reduced from 256 for lower latency
     windowingFunction: "hamming",
     features: ["energy", "rms", "zcr"],
   },
 };
 
-// Mood detection thresholds and mappings
+/**
+ * Mood detection thresholds and mappings
+ */
 export const moodDetection = {
   // Mood categories and their audio feature thresholds
   moods: {
@@ -37,9 +41,11 @@ export const moodDetection = {
   defaultSensitivity: 0.8,
 };
 
-// Visualization mappings for different moods
+/**
+ * Visualization settings for different moods
+ */
 export const visualizationSettings = {
-  // Color palettes for different moods
+  // Color palettes for each mood
   colorPalettes: {
     happy: ["#FFC300", "#FF5733", "#C70039", "#900C3F"],
     energetic: ["#FF0000", "#FF7F00", "#FFFF00", "#00FF00"],
@@ -72,7 +78,7 @@ export const visualizationSettings = {
   },
 
   // Default visualization style
-  defaultStyle: "particles", // Options: 'particles', 'waveform', 'geometric'
+  defaultStyle: "particles",
 
   // Responsive settings
   responsive: {

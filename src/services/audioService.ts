@@ -1,6 +1,6 @@
-import Meyda from "meyda";
 import { audioSettings, moodDetection } from "../../aisettings";
 
+// Define clear types for better type safety
 export type AudioFeatures = {
   energy: number;
   spectralCentroid: number;
@@ -20,26 +20,34 @@ export type AudioAnalysisResult = {
   dominantFrequency: number;
 };
 
+/**
+ * AudioService handles microphone input, audio analysis, and mood detection
+ */
 class AudioService {
+  // Web Audio API components
   private audioContext: AudioContext | null = null;
   private analyzer: AnalyserNode | null = null;
   private microphone: MediaStreamAudioSourceNode | null = null;
-  private meydaAnalyzer: any = null;
   private stream: MediaStream | null = null;
+
+  // State
   private isInitialized = false;
   private sensitivity: number = moodDetection.defaultSensitivity;
-
   private listeners: ((result: AudioAnalysisResult) => void)[] = [];
 
+  // Mood tracking
   private currentMood: MoodType = "calm";
   private moodChangeTime: number = 0;
-  private moodChangeThreshold: number = 300; // ms
+  private moodChangeThreshold: number = 100; // ms - reduced for faster response
 
+  /**
+   * Initialize audio capture and analysis
+   */
   async initialize(): Promise<boolean> {
     if (this.isInitialized) return true;
 
     try {
-      // Request microphone access with standard settings
+      // Request microphone access
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
@@ -49,16 +57,15 @@ class AudioService {
       this.microphone = this.audioContext.createMediaStreamSource(this.stream);
       this.analyzer = this.audioContext.createAnalyser();
 
-      // Use standard analyzer settings
-      this.analyzer.fftSize = 256; // Standard size
-      this.analyzer.smoothingTimeConstant = 0.8; // Standard smoothing
-      this.analyzer.minDecibels = -100;
-      this.analyzer.maxDecibels = -30;
+      // Configure analyzer with settings from config
+      this.analyzer.fftSize = audioSettings.fftSize;
+      this.analyzer.smoothingTimeConstant = 0.4;
+      this.analyzer.minDecibels = audioSettings.minDecibels;
+      this.analyzer.maxDecibels = audioSettings.maxDecibels;
 
       // Connect microphone to analyzer
       this.microphone.connect(this.analyzer);
 
-      // Set up a simple analyzer without Meyda
       this.isInitialized = true;
 
       // Start the analysis loop
@@ -71,14 +78,17 @@ class AudioService {
     }
   }
 
+  /**
+   * Main audio analysis loop
+   */
   private startAnalysisLoop(): void {
     if (!this.analyzer || !this.audioContext) return;
 
     const bufferLength = this.analyzer.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
-    // Simple noise floor
-    let noiseFloor = 0.05;
+    // Noise floor for filtering out background noise
+    const noiseFloor = 0.03;
 
     const analyzeAudio = () => {
       if (!this.isInitialized) return;
@@ -86,103 +96,25 @@ class AudioService {
       // Get frequency data
       this.analyzer!.getByteFrequencyData(dataArray);
 
-      // Calculate simple energy
-      let sum = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        sum += dataArray[i];
-      }
-      let energy = sum / (bufferLength * 255); // Normalize to 0-1
+      // Extract audio features
+      const features = this.extractAudioFeatures(
+        dataArray,
+        bufferLength,
+        noiseFloor
+      );
 
-      // Apply a simple noise gate
-      energy = Math.max(0, energy - noiseFloor);
+      // Detect mood based on features
+      const moodResult = this.detectMood(features);
 
-      // Apply sensitivity
-      energy = Math.min(1, energy * 2.0 * this.sensitivity);
+      // Calculate dominant frequency
+      const dominantFrequency = this.calculateDominantFrequency();
 
-      // Calculate simple RMS
-      let rmsSum = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        rmsSum += (dataArray[i] / 255) ** 2;
-      }
-      const rms = Math.sqrt(rmsSum / bufferLength);
-
-      // Calculate zero crossing rate (simplified)
-      let zcr = 0;
-      let prevValue = dataArray[0] > 128 ? 1 : -1;
-      for (let i = 1; i < bufferLength; i++) {
-        const currentValue = dataArray[i] > 128 ? 1 : -1;
-        if (prevValue !== currentValue) {
-          zcr++;
-        }
-        prevValue = currentValue;
-      }
-      zcr = zcr / bufferLength;
-
-      // Calculate spectral centroid
-      let numerator = 0;
-      let denominator = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        const amplitude = dataArray[i] / 255;
-        numerator += i * amplitude;
-        denominator += amplitude;
-      }
-      const spectralCentroid =
-        denominator === 0 ? 0 : numerator / denominator / bufferLength;
-
-      // Calculate spectral flatness (simplified)
-      let geometricMean = 0;
-      let arithmeticMean = 0;
-      let nonZeroCount = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        const value = dataArray[i] / 255;
-        if (value > 0.01) {
-          // Avoid log(0)
-          geometricMean += Math.log(value);
-          arithmeticMean += value;
-          nonZeroCount++;
-        }
-      }
-      geometricMean =
-        nonZeroCount > 0 ? Math.exp(geometricMean / nonZeroCount) : 0;
-      arithmeticMean = nonZeroCount > 0 ? arithmeticMean / nonZeroCount : 0;
-      const spectralFlatness =
-        arithmeticMean > 0 ? geometricMean / arithmeticMean : 0;
-
-      // Calculate spectral rolloff (simplified)
-      const rolloffThreshold = 0.85; // 85% of energy
-      let cumulativeEnergy = 0;
-      const totalEnergy = sum;
-      let spectralRolloff = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        cumulativeEnergy += dataArray[i];
-        if (cumulativeEnergy / totalEnergy >= rolloffThreshold) {
-          spectralRolloff = i / bufferLength;
-          break;
-        }
-      }
-
-      // Simple mood detection
-      const moodResult = this.detectMood({
-        energy,
-        rms,
-        zcr,
-        spectralCentroid,
-        spectralFlatness,
-        spectralRolloff,
-      });
-
-      // Notify listeners with all features
+      // Notify listeners with analysis results
       this.notifyListeners({
         mood: moodResult.mood,
-        confidence: moodResult.confidence,
-        features: {
-          energy,
-          rms,
-          zcr,
-          spectralCentroid,
-          spectralFlatness,
-          spectralRolloff,
-        },
+        moodConfidence: moodResult.confidence,
+        features,
+        dominantFrequency,
       });
 
       // Continue the loop
@@ -193,62 +125,99 @@ class AudioService {
     analyzeAudio();
   }
 
-  private handleAudioFeatures(features: AudioFeatures): void {
-    // Normalize features to 0-1 range
-    const normalizedFeatures = this.normalizeFeatures(features);
+  /**
+   * Extract audio features from frequency data
+   */
+  private extractAudioFeatures(
+    dataArray: Uint8Array,
+    bufferLength: number,
+    noiseFloor: number
+  ): AudioFeatures {
+    // Calculate energy
+    let sum = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      sum += dataArray[i];
+    }
+    let energy = sum / (bufferLength * 255); // Normalize to 0-1
 
-    // Detect mood
-    const { mood, confidence } = this.detectMood(normalizedFeatures);
+    // Apply noise gate and sensitivity
+    energy = Math.max(0, energy - noiseFloor);
+    energy = Math.min(1, energy * 2.0 * this.sensitivity);
 
-    // Calculate dominant frequency
-    const dominantFrequency = this.calculateDominantFrequency();
+    // Calculate RMS (Root Mean Square)
+    let rmsSum = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      rmsSum += (dataArray[i] / 255) ** 2;
+    }
+    const rms = Math.sqrt(rmsSum / bufferLength);
 
-    // Create analysis result
-    const result: AudioAnalysisResult = {
-      features: normalizedFeatures,
-      mood,
-      moodConfidence: confidence,
-      dominantFrequency,
+    // Calculate ZCR (Zero Crossing Rate)
+    let zcr = 0;
+    let prevValue = dataArray[0] > 128 ? 1 : -1;
+    for (let i = 1; i < bufferLength; i++) {
+      const currentValue = dataArray[i] > 128 ? 1 : -1;
+      if (prevValue !== currentValue) {
+        zcr++;
+      }
+      prevValue = currentValue;
+    }
+    zcr = zcr / bufferLength;
+
+    // Calculate spectral centroid (brightness)
+    let numerator = 0;
+    let denominator = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      const amplitude = dataArray[i] / 255;
+      numerator += i * amplitude;
+      denominator += amplitude;
+    }
+    const spectralCentroid =
+      denominator === 0 ? 0 : numerator / denominator / bufferLength;
+
+    // Calculate spectral flatness
+    let geometricMean = 0;
+    let arithmeticMean = 0;
+    let nonZeroCount = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      const value = dataArray[i] / 255;
+      if (value > 0.01) {
+        geometricMean += Math.log(value);
+        arithmeticMean += value;
+        nonZeroCount++;
+      }
+    }
+    geometricMean =
+      nonZeroCount > 0 ? Math.exp(geometricMean / nonZeroCount) : 0;
+    arithmeticMean = nonZeroCount > 0 ? arithmeticMean / nonZeroCount : 0;
+    const spectralFlatness =
+      arithmeticMean > 0 ? geometricMean / arithmeticMean : 0;
+
+    // Calculate spectral rolloff
+    const rolloffThreshold = 0.85;
+    let cumulativeEnergy = 0;
+    const totalEnergy = sum;
+    let spectralRolloff = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      cumulativeEnergy += dataArray[i];
+      if (cumulativeEnergy / totalEnergy >= rolloffThreshold) {
+        spectralRolloff = i / bufferLength;
+        break;
+      }
+    }
+
+    return {
+      energy,
+      rms,
+      zcr,
+      spectralCentroid,
+      spectralFlatness,
+      spectralRolloff,
     };
-
-    // Notify listeners
-    this.notifyListeners(result);
   }
 
-  private normalizeFeatures(features: AudioFeatures): AudioFeatures {
-    const normalized: AudioFeatures = { ...features };
-
-    // Simple normalization for better performance
-    if (normalized.energy !== undefined)
-      normalized.energy = Math.min(1, Math.max(0, normalized.energy));
-
-    if (normalized.spectralCentroid !== undefined)
-      normalized.spectralCentroid = Math.min(
-        1,
-        Math.max(0, normalized.spectralCentroid / 10000)
-      );
-
-    if (normalized.spectralFlatness !== undefined)
-      normalized.spectralFlatness = Math.min(
-        1,
-        Math.max(0, normalized.spectralFlatness)
-      );
-
-    if (normalized.spectralRolloff !== undefined)
-      normalized.spectralRolloff = Math.min(
-        1,
-        Math.max(0, normalized.spectralRolloff / 22050)
-      );
-
-    if (normalized.rms !== undefined)
-      normalized.rms = Math.min(1, Math.max(0, normalized.rms * 5));
-
-    if (normalized.zcr !== undefined)
-      normalized.zcr = Math.min(1, Math.max(0, normalized.zcr / 1000));
-
-    return normalized;
-  }
-
+  /**
+   * Detect mood based on audio features
+   */
   private detectMood(features: AudioFeatures): {
     mood: MoodType;
     confidence: number;
@@ -256,7 +225,7 @@ class AudioService {
     const { energy, spectralCentroid, zcr, spectralFlatness } = features;
     let detectedMood: MoodType;
 
-    // Simple mood detection thresholds
+    // Mood detection logic based on audio features
     if (energy < 0.03) {
       // Very low energy - stay in current mood
       detectedMood = this.currentMood || "calm";
@@ -274,10 +243,10 @@ class AudioService {
       detectedMood = "calm";
     }
 
-    // Quick mood changes
+    // Apply mood change debouncing
     const now = Date.now();
     if (detectedMood !== this.currentMood) {
-      if (now - this.moodChangeTime > 100) {
+      if (now - this.moodChangeTime > this.moodChangeThreshold) {
         this.currentMood = detectedMood;
         this.moodChangeTime = now;
       }
@@ -286,8 +255,11 @@ class AudioService {
     return { mood: this.currentMood, confidence: 1.0 };
   }
 
+  /**
+   * Calculate the dominant frequency in the audio signal
+   */
   private calculateDominantFrequency(): number {
-    if (!this.analyzer) return 0;
+    if (!this.analyzer || !this.audioContext) return 0;
 
     const bufferLength = this.analyzer.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
@@ -305,14 +277,20 @@ class AudioService {
     }
 
     // Convert bin index to frequency
-    const sampleRate = this.audioContext?.sampleRate || 44100;
+    const sampleRate = this.audioContext.sampleRate;
     return (maxIndex * sampleRate) / (this.analyzer.fftSize * 2);
   }
 
+  /**
+   * Set sensitivity level for audio analysis
+   */
   setSensitivity(value: number): void {
     this.sensitivity = Math.max(0, Math.min(1, value));
   }
 
+  /**
+   * Subscribe to audio analysis updates
+   */
   subscribe(callback: (result: AudioAnalysisResult) => void): () => void {
     this.listeners.push(callback);
 
@@ -324,10 +302,16 @@ class AudioService {
     };
   }
 
+  /**
+   * Notify all listeners with analysis results
+   */
   private notifyListeners(result: AudioAnalysisResult): void {
     this.listeners.forEach((listener) => listener(result));
   }
 
+  /**
+   * Stop audio capture and analysis
+   */
   stop(): void {
     this.isInitialized = false;
 

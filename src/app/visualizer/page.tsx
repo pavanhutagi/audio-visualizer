@@ -8,13 +8,98 @@ import audioService, {
 } from "@/services/audioService";
 import ParticleVisualizer from "@/components/visualizers/ParticleVisualizer";
 
+/**
+ * Maps mood types to display colors
+ */
+const moodColors: Record<string, string> = {
+  energetic: "#FF5722", // Orange-red
+  happy: "#4CAF50", // Green
+  calm: "#2196F3", // Blue
+  melancholic: "#9C27B0", // Purple
+  default: "#607D8B", // Blue-grey
+};
+
+/**
+ * Loading spinner component
+ */
+const LoadingSpinner: React.FC = () => (
+  <div className="text-center">
+    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white mx-auto mb-4"></div>
+    <p>Initializing audio...</p>
+  </div>
+);
+
+/**
+ * Error display component
+ */
+const ErrorDisplay: React.FC<{ message: string }> = ({ message }) => (
+  <div className="text-red-500 max-w-md text-center p-4">
+    <h3 className="text-xl font-bold mb-2">Error</h3>
+    <p>{message}</p>
+  </div>
+);
+
+/**
+ * Audio feature with progress bar component
+ */
+const FeatureWithBar: React.FC<{
+  label: string;
+  value: number | undefined;
+  max?: number;
+}> = ({ label, value, max = 1 }) => {
+  const displayValue = value?.toFixed(2) || "0.00";
+  const percentage = value ? Math.min(100, (value / max) * 100) : 0;
+
+  return (
+    <div className="px-2">
+      <div className="text-center">
+        {label}: {displayValue}
+      </div>
+      <div className="w-full bg-gray-700 h-1 mt-1 rounded-full overflow-hidden">
+        <div
+          className="bg-blue-500 h-full rounded-full"
+          style={{ width: `${percentage}%` }}
+        />
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Audio features display component with progress bars
+ */
+const AudioFeatures: React.FC<{ audioData: AudioAnalysisResult | null }> = ({
+  audioData,
+}) => (
+  <div className="flex justify-around p-2 sm:p-4 bg-gray-900 text-xs overflow-x-auto">
+    <FeatureWithBar label="Energy" value={audioData?.features.energy} />
+    <FeatureWithBar label="RMS" value={audioData?.features.rms} />
+    <FeatureWithBar label="ZCR" value={audioData?.features.zcr} />
+    <FeatureWithBar
+      label="Centroid"
+      value={audioData?.features.spectralCentroid}
+    />
+    <FeatureWithBar
+      label="Flatness"
+      value={audioData?.features.spectralFlatness}
+    />
+    <FeatureWithBar
+      label="Rolloff"
+      value={audioData?.features.spectralRolloff}
+      max={1.5}
+    />
+  </div>
+);
+
+/**
+ * Main visualizer page component
+ */
 export default function VisualizerPage() {
   const router = useRouter();
   const [isInitialized, setIsInitialized] = useState(false);
   const [audioData, setAudioData] = useState<AudioAnalysisResult | null>(null);
   const [sensitivity, setSensitivity] = useState(0.7);
   const [error, setError] = useState<string | null>(null);
-  const [updateCounter, setUpdateCounter] = useState(0);
 
   // Initialize audio service
   useEffect(() => {
@@ -24,9 +109,8 @@ export default function VisualizerPage() {
         if (success) {
           setIsInitialized(true);
 
-          // Subscribe to audio analysis updates with no throttling
+          // Subscribe to audio analysis updates
           const unsubscribe = audioService.subscribe((result) => {
-            // Update immediately for every audio frame
             setAudioData(result);
           });
 
@@ -63,36 +147,25 @@ export default function VisualizerPage() {
     router.push("/");
   };
 
-  // Add a function to get the mood color
+  // Get color for current mood
   const getMoodColor = (mood: MoodType | string): string => {
-    // Default colors for each mood
-    const moodColors = {
-      energetic: "#FF5722", // Orange-red
-      happy: "#FFC107", // Amber
-      calm: "#2196F3", // Blue
-      melancholic: "#9C27B0", // Purple
-    };
-
-    return moodColors[mood as MoodType] || "#2196F3"; // Default to blue
+    return moodColors[mood] || moodColors.default;
   };
 
   return (
     <div className="flex flex-col h-screen bg-black text-white">
-      {/* Header with improved layout */}
-      <div className="flex flex-col sm:flex-row items-center justify-between p-4 bg-gray-900">
-        {/* Back button - fixed width */}
-        <div className="w-24 sm:w-28">
-          <button
-            onClick={handleBack}
-            className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 transition-colors w-full"
-          >
-            Back
-          </button>
-        </div>
+      {/* Header with controls - updated for responsive design */}
+      <div className="flex justify-between items-center p-2 sm:p-4 border-b border-gray-800 bg-gray-900">
+        <button
+          onClick={handleBack}
+          className="h-full px-5 py-1.5 sm:px-6 sm:py-2 bg-blue-600 rounded hover:bg-blue-700 transition-colors flex items-center text-sm sm:text-base min-w-24 justify-center"
+        >
+          <span className="mr-1">◀</span> Back
+        </button>
 
-        {/* Centered sensitivity control - always in center */}
-        <div className="flex flex-col items-center justify-center flex-grow mx-4 my-2 sm:my-0">
-          <div className="flex items-center justify-center w-full max-w-md">
+        {/* Only show sensitivity in header on larger screens */}
+        <div className="hidden sm:flex flex-grow mx-4 justify-center">
+          <div className="flex items-center w-full max-w-xs">
             <span className="mr-2 whitespace-nowrap">Sensitivity:</span>
             <input
               type="range"
@@ -107,10 +180,10 @@ export default function VisualizerPage() {
           </div>
         </div>
 
-        {/* Mood display - with dynamic background color based on mood */}
-        <div className="w-24 sm:w-28 text-center">
+        {/* Mood display - increased width for mobile */}
+        <div className="w-32 sm:w-28 text-center">
           <div
-            className="px-2 py-1 rounded transition-colors duration-300"
+            className="px-2 py-1 rounded transition-colors duration-300 h-full flex flex-col justify-center"
             style={{
               backgroundColor: getMoodColor(audioData?.mood || "calm"),
             }}
@@ -129,36 +202,34 @@ export default function VisualizerPage() {
           <ParticleVisualizer audioData={audioData} />
         ) : (
           <div className="flex items-center justify-center h-full">
-            {error ? (
-              <div className="text-red-500 max-w-md text-center p-4">
-                <h3 className="text-xl font-bold mb-2">Error</h3>
-                <p>{error}</p>
-              </div>
-            ) : (
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-white mx-auto mb-4"></div>
-                <p>Initializing audio...</p>
-              </div>
-            )}
+            {error ? <ErrorDisplay message={error} /> : <LoadingSpinner />}
           </div>
         )}
       </div>
 
-      {/* Audio feature display */}
-      <div className="flex justify-around p-2 bg-gray-900 text-xs overflow-x-auto">
-        <div>Energy: {audioData?.features.energy?.toFixed(2) || "0.00"}</div>
-        <div>RMS: {audioData?.features.rms?.toFixed(2) || "0.00"}</div>
-        <div>ZCR: {audioData?.features.zcr?.toFixed(2) || "0.00"}</div>
-        <div>
-          Centroid: {audioData?.features.spectralCentroid?.toFixed(2) || "0.00"}
+      {/* Mobile sensitivity control - only shown on small screens */}
+      <div className="sm:hidden p-2 pb-1.5 bg-gray-900 border-t border-gray-800">
+        <div className="flex items-center justify-center">
+          <span className="mr-2 text-xs sm:text-sm">Sensitivity:</span>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={sensitivity}
+            onChange={handleSensitivityChange}
+            className="w-full max-w-48"
+          />
+          <span className="ml-2 text-xs sm:text-sm">
+            {sensitivity.toFixed(1)}
+          </span>
         </div>
-        <div>
-          Flatness: {audioData?.features.spectralFlatness?.toFixed(2) || "0.00"}
-        </div>
-        <div>
-          Rolloff: {audioData?.features.spectralRolloff?.toFixed(2) || "0.00"}
-        </div>
+        {/* Add separator line */}
+        <div className="mt-2 border-t border-gray-700"></div>
       </div>
+
+      {/* Audio feature display - reduced padding on mobile */}
+      <AudioFeatures audioData={audioData} />
     </div>
   );
 }
