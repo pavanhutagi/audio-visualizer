@@ -1,4 +1,4 @@
-# AI Audio Visualizer
+# Audio Visualizer
 
 A real-time audio visualization application that analyzes microphone input and creates dynamic 3D visualizations based on detected emotional characteristics.
 
