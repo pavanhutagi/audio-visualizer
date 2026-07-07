@@ -2,15 +2,13 @@ import React, { useRef, useMemo, useState, useEffect } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
-import { AudioAnalysisResult } from "@/services/audioService";
 import { visualizationSettings } from "../../../aisettings";
+import type { VisualizerProps } from "./types";
 
 // Add this type import for the ref
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 
-type ParticleVisualizerProps = {
-  audioData: AudioAnalysisResult | null;
-};
+type ParticleVisualizerProps = VisualizerProps;
 
 /**
  * Creates a particle texture for better-looking particles

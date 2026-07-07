@@ -18,6 +18,16 @@ export type AudioAnalysisResult = {
   mood: MoodType;
   moodConfidence: number;
   dominantFrequency: number;
+  /**
+   * Normalized frequency spectrum (0-1 per bin, low → high frequency).
+   * Length equals the analyser's frequencyBinCount.
+   */
+  frequencyData: number[];
+  /**
+   * Normalized time-domain waveform (-1 → 1 per sample).
+   * Length equals the analyser's fftSize.
+   */
+  waveform: number[];
 };
 
 /**
@@ -86,6 +96,7 @@ class AudioService {
 
     const bufferLength = this.analyzer.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
+    const timeDomainArray = new Uint8Array(this.analyzer.fftSize);
 
     // Noise floor for filtering out background noise
     const noiseFloor = 0.03;
@@ -93,8 +104,9 @@ class AudioService {
     const analyzeAudio = () => {
       if (!this.isInitialized) return;
 
-      // Get frequency data
+      // Get frequency and time-domain data
       this.analyzer!.getByteFrequencyData(dataArray);
+      this.analyzer!.getByteTimeDomainData(timeDomainArray);
 
       // Extract audio features
       const features = this.extractAudioFeatures(
@@ -109,12 +121,26 @@ class AudioService {
       // Calculate dominant frequency
       const dominantFrequency = this.calculateDominantFrequency();
 
+      // Build normalized raw data for waveform/spectrum visualizers.
+      // A fresh array is created each frame so React state updates stay immutable.
+      const frequencyData = new Array(bufferLength);
+      for (let i = 0; i < bufferLength; i++) {
+        frequencyData[i] = dataArray[i] / 255;
+      }
+      const waveform = new Array(timeDomainArray.length);
+      for (let i = 0; i < timeDomainArray.length; i++) {
+        // Byte time-domain data is centered on 128 → map to -1..1
+        waveform[i] = (timeDomainArray[i] - 128) / 128;
+      }
+
       // Notify listeners with analysis results
       this.notifyListeners({
         mood: moodResult.mood,
         moodConfidence: moodResult.confidence,
         features,
         dominantFrequency,
+        frequencyData,
+        waveform,
       });
 
       // Continue the loop

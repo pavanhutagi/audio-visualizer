@@ -6,7 +6,11 @@ import audioService, {
   AudioAnalysisResult,
   MoodType,
 } from "@/services/audioService";
-import ParticleVisualizer from "@/components/visualizers/ParticleVisualizer";
+import {
+  visualizers,
+  defaultVisualizerId,
+  getVisualizer,
+} from "@/components/visualizers";
 
 /**
  * Maps mood types to display colors
@@ -100,6 +104,9 @@ export default function VisualizerPage() {
   const [audioData, setAudioData] = useState<AudioAnalysisResult | null>(null);
   const [sensitivity, setSensitivity] = useState(0.7);
   const [error, setError] = useState<string | null>(null);
+  const [visualizerId, setVisualizerId] = useState<string>(defaultVisualizerId);
+
+  const ActiveVisualizer = getVisualizer(visualizerId).component;
 
   // Initialize audio service
   useEffect(() => {
@@ -156,12 +163,31 @@ export default function VisualizerPage() {
     <div className="flex flex-col h-screen bg-black text-white">
       {/* Header with controls - updated for responsive design */}
       <div className="flex justify-between items-center p-2 sm:p-4 border-b border-gray-800 bg-gray-900">
-        <button
-          onClick={handleBack}
-          className="h-full px-5 py-1.5 sm:px-6 sm:py-2 bg-blue-600 rounded hover:bg-blue-700 transition-colors flex items-center text-sm sm:text-base min-w-24 justify-center"
-        >
-          <span className="mr-1">◀</span> Back
-        </button>
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            onClick={handleBack}
+            className="h-full px-4 py-1.5 sm:px-6 sm:py-2 bg-blue-600 rounded hover:bg-blue-700 transition-colors flex items-center text-sm sm:text-base justify-center"
+          >
+            <span className="mr-1">◀</span> Back
+          </button>
+
+          {/* Visualizer picker */}
+          <label className="flex items-center gap-2 text-xs sm:text-sm">
+            <span className="hidden md:inline text-gray-400">Visualizer:</span>
+            <select
+              value={visualizerId}
+              onChange={(e) => setVisualizerId(e.target.value)}
+              title={getVisualizer(visualizerId).description}
+              className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-sm text-white hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              {visualizers.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
 
         {/* Only show sensitivity in header on larger screens */}
         <div className="hidden sm:flex flex-grow mx-4 justify-center">
@@ -199,7 +225,7 @@ export default function VisualizerPage() {
       {/* Main content */}
       <div className="flex-grow relative">
         {isInitialized ? (
-          <ParticleVisualizer audioData={audioData} />
+          <ActiveVisualizer audioData={audioData} />
         ) : (
           <div className="flex items-center justify-center h-full">
             {error ? <ErrorDisplay message={error} /> : <LoadingSpinner />}
